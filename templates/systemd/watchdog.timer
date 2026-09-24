@@ -1,0 +1,13 @@
+# Устанавливается как {{SLUG}}-watchdog.timer.
+[Unit]
+Description={{SLUG}}: ежедневная сверка с эталоном
+
+[Timer]
+# После окна бэкапа: сторож и бэкап читают один том, вместе им тесно.
+OnCalendar=*-*-* 04:30:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit={{SLUG}}-watchdog.service
+
+[Install]
+WantedBy=timers.target

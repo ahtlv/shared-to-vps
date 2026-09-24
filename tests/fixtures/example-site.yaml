@@ -1,0 +1,9 @@
+# Профиль-фикстура для стенда и тестов рендера. Реальный профиль живёт в
+# ~/.claude/shared-to-vps/sites/<slug>.yaml и в репозиторий не попадает.
+slug: example
+domain: example.test
+stack_dir: /opt/stacks/example
+edge_network: edge
+edge_network_subnet: 172.20.0.0/24
+php_version: "8.3"
+db_image: mariadb:10.11

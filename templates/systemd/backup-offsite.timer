@@ -1,0 +1,13 @@
+# Устанавливается как {{SLUG}}-backup-offsite.timer.
+[Unit]
+Description={{SLUG}}: еженедельная внешняя копия
+
+[Timer]
+# После окна ежедневного бэкапа, чтобы уехал свежий набор.
+OnCalendar=Sun *-*-* 05:15:00 UTC
+Persistent=true
+RandomizedDelaySec=30m
+Unit={{SLUG}}-backup-offsite.service
+
+[Install]
+WantedBy=timers.target

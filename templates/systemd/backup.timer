@@ -1,0 +1,14 @@
+# Устанавливается как {{SLUG}}-backup.timer.
+[Unit]
+Description={{SLUG}}: ежедневный набор бэкапа
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+# Пропущенный из-за выключенного сервера прогон выполнится при загрузке.
+Persistent=true
+# Разброс, чтобы бэкапы соседних площадок не читали диск одновременно.
+RandomizedDelaySec=20m
+Unit={{SLUG}}-backup.service
+
+[Install]
+WantedBy=timers.target

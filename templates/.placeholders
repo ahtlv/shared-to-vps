@@ -1,0 +1,8 @@
+# Заглушки, которые подставляет bin/render. Одна на строку.
+SLUG
+DOMAIN
+STACK_DIR
+EDGE_NETWORK
+EDGE_NETWORK_SUBNET
+PHP_VERSION
+DB_IMAGE

@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /search/
+
+Sitemap: https://example.test/sitemap.xml

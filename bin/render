@@ -1,0 +1,66 @@
+#!/bin/sh
+# Подстановка профиля площадки в шаблоны. Отказ лучше конфига с пустым
+# server_name: пустое имя хоста в nginx означает «любой», а это не то, что
+# просили.
+set -u
+
+profile=''; out=''; tpl='templates'
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --profile)  profile=${2:?}; shift 2 ;;
+        --out)      out=${2:?}; shift 2 ;;
+        --template) tpl=${2:?}; shift 2 ;;
+        *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
+    esac
+done
+[ -n "$profile" ] && [ -n "$out" ] || { echo 'нужны --profile и --out' >&2; exit 2; }
+[ -f "$profile" ] || { echo "профиль не найден: $profile" >&2; exit 2; }
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+tpl_dir=$root/$tpl
+placeholders=$(grep -v '^#' "$tpl_dir/.placeholders" | grep -v '^$')
+
+# Значение поля профиля: ключ в нижнем регистре, простой YAML вида key: value.
+value_of() {
+    key=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+    sed -n "s/^${key}:[[:space:]]*//p" "$profile" | head -1 | sed 's/^"//; s/"$//'
+}
+
+missing=''
+for name in $placeholders; do
+    [ -n "$(value_of "$name")" ] || missing="$missing $(printf '%s' "$name" | tr 'A-Z' 'a-z')"
+done
+if [ -n "$missing" ]; then
+    echo "в профиле не заполнены поля:$missing" >&2
+    exit 2
+fi
+
+slug=$(value_of SLUG)
+if [ -f "$out/.rendered-slug" ]; then
+    echo "конфликт: в $out уже отрендерен слаг $(cat "$out/.rendered-slug")" >&2
+    echo 'два стека с одним слагом делят имена контейнеров, сетей и томов' >&2
+    exit 3
+fi
+
+stage=$(mktemp -d)
+cp -R "$tpl_dir/." "$stage/"
+rm -f "$stage/.placeholders"
+
+for name in $placeholders; do
+    val=$(value_of "$name")
+    esc_val=$(printf '%s' "$val" | sed -e 's/[\&|]/\\&/g')
+    find "$stage" -type f -exec sed -i.bak "s|{{$name}}|$esc_val|g" {} \; -exec rm -f {}.bak \;
+done
+
+if grep -rq '{{' "$stage"; then
+    echo 'после подстановки остались заглушки:' >&2
+    grep -rno '{{[A-Z_]*}}' "$stage" >&2
+    rm -rf "$stage"
+    exit 2
+fi
+
+mkdir -p "$out"
+cp -R "$stage/." "$out/"
+printf '%s\n' "$slug" > "$out/.rendered-slug"
+rm -rf "$stage"
+echo "отрендерено в $out для слага $slug"

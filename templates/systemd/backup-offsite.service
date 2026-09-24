@@ -1,0 +1,17 @@
+# Устанавливается как {{SLUG}}-backup-offsite.service.
+[Unit]
+Description={{SLUG}}: шифрованная внешняя копия последнего набора
+After={{SLUG}}-backup.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{STACK_DIR}}
+ExecStart={{STACK_DIR}}/scripts/backup-offsite.sh
+User=root
+Group=root
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=3h

@@ -1,0 +1,134 @@
+name: {{SLUG}}
+
+services:
+  # Сервис назван {{SLUG}}-nginx, а не nginx, намеренно. Compose добавляет имя
+  # сервиса псевдонимом в каждую сеть, включая общую edge, где рядом стоят
+  # такие же сервисы соседних площадок. Два одинаковых псевдонима в одной сети
+  # делают разрешение имени `nginx` неопределённым: запрос соседа может прийти
+  # к вам, а ваш к соседу.
+  {{SLUG}}-nginx:
+    image: nginx:1.27-alpine
+    container_name: {{SLUG}}-nginx
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.10
+    depends_on:
+      php-fpm:
+        condition: service_healthy
+    volumes:
+      # Только чтение: веб-сервер не должен иметь возможности дописать в
+      # docroot ничего, даже если его уговорят.
+      - site_data:/var/www/html:ro
+      - ./nginx/00-tuning.conf:/etc/nginx/conf.d/00-tuning.conf:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Каталогом, а не файлом: правка файла адаптера на месте меняет инод, и
+      # файловый бинд её бы не увидел. У каталога такой ловушки нет.
+      - ./nginx/adapter:/etc/nginx/adapter:ro
+    networks:
+      # Единственный сервис проекта во внешней сети: через неё обратный прокси
+      # проксирует на {{SLUG}}-nginx:80. Отдельный aliases не нужен, имя
+      # сервиса и есть нужный псевдоним.
+      edge: {}
+      # Канал только до php-fpm — не internal. Docker не различает порты
+      # внутри одной сети: если бы веб-сервер сидел в internal вместе с базой,
+      # ничто не мешало бы ему открыть TCP до 3306 напрямую, в обход
+      # приложения. app общая только для nginx и php-fpm, до базы оттуда пути
+      # нет ни по имени, ни по IP.
+      app: {}
+    healthcheck:
+      # Через php-fpm, а не просто «слушает ли сокет»: /healthz уходит
+      # FastCGI-запросом и отвечает pong только если FPM жив.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz | grep -q pong"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  php-fpm:
+    build:
+      context: ./php
+    image: {{SLUG}}-php-fpm:local
+    container_name: {{SLUG}}-php-fpm
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 0.75
+    # env_file здесь намеренно нет. Пароль базы в окружении процесса, который
+    # исполняет код сайта, это лишний трофей: реквизиты сайта живут в конфиге
+    # приложения (адаптер конкретной CMS), а не в окружении контейнера.
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    volumes:
+      - site_data:/var/www/html
+    networks:
+      # Тот же канал, что у веб-сервера, — сюда приходит fastcgi_pass.
+      app: {}
+      # Между приложением и базой, без веб-сервера: только отсюда открыт путь
+      # к mariadb.
+      internal: {}
+      # Только исходящие: проверка обновлений и почта. Во внутренней сети без
+      # маршрута наружу php-fpm не резолвит даже имя внешнего сервера. Наружу
+      # на этой сети тоже ничего не опубликовано.
+      egress: {}
+    healthcheck:
+      # Настоящий FastCGI-пинг вместо `php-fpm -t`: тот лишь проверяет синтаксис
+      # конфига и остаётся зелёным на повисшем пуле.
+      test: ["CMD-SHELL", "SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  mariadb:
+    image: {{DB_IMAGE}}
+    container_name: {{SLUG}}-mariadb
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.50
+    environment:
+      # Случайный пароль root на первом старте, без секрета в репозитории и
+      # без внешнего файла окружения. Его не знает никто, и это правильно:
+      # админские действия (разворачивание, бэкап, сторож) идут через
+      # админа по unix-сокету из mariadb/initdb, `docker exec -u mysql`.
+      # Реквизиты сайта под адаптер CMS создаются своей учётной записью.
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --innodb-log-file-size=64M
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./mariadb/initdb:/docker-entrypoint-initdb.d:ro
+    networks:
+      # Только internal: ни edge, ни app, ни egress. База не должна быть
+      # достижима ниоткуда, кроме php-fpm, и веб-сервер в этой сети не состоит.
+      internal: {}
+    healthcheck:
+      # healthcheck.sh официального образа подключается через unix-сокет от
+      # имени root контейнера и не требует пароля, в отличие от `mariadb-admin
+      # ping -h`, которому нужен TCP и, значит, реквизит.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+networks:
+  edge:
+    external: true
+    name: {{EDGE_NETWORK}}
+  app:
+    name: {{SLUG}}_app
+    internal: true
+  internal:
+    name: {{SLUG}}_internal
+    internal: true
+  egress:
+    name: {{SLUG}}_egress
+
+volumes:
+  site_data:
+    name: {{SLUG}}_site_data
+  mariadb_data:
+    name: {{SLUG}}_mariadb_data

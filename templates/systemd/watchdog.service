@@ -1,0 +1,20 @@
+# Устанавливается как {{SLUG}}-watchdog.service. Код 1 (находки) и код 2
+# (сторож не смог проверить) оставляют юнит в состоянии failed: это видно в
+# `systemctl --failed`, а таймер всё равно запустит его завтра.
+[Unit]
+Description={{SLUG}}: сверка площадки с эталоном сторожа
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{STACK_DIR}}
+ExecStart=/usr/bin/python3 {{STACK_DIR}}/scripts/watchdog-check.py
+User=root
+Group=root
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=15m

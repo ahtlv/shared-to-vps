@@ -1,0 +1,18 @@
+# Устанавливается как {{SLUG}}-backup.service: имя юнита несёт слаг, иначе
+# второй сайт на том же сервере затрёт юнит первого.
+[Unit]
+Description={{SLUG}}: собрать и проверить набор бэкапа
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{STACK_DIR}}
+ExecStart={{STACK_DIR}}/scripts/backup.sh
+User=root
+Group=root
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=1h
